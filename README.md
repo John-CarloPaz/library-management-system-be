@@ -17,7 +17,7 @@ A Laravel-based backend for managing branches, users, books, and branch-specific
 
 * PHP >= 8.1
 * Composer
-* MySQL or PostgreSQL
+* PostgreSQL
 * Laravel 10+
 
 ---
