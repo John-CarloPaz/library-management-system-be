@@ -46,27 +46,21 @@ cp .env.example .env
 Update `.env` with your database credentials:
 
 ```
-DB_CONNECTION=mysql
+DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
-DB_PORT=3306
+DB_PORT=potnum
 DB_DATABASE=library_db
 DB_USERNAME=root
 DB_PASSWORD=secret
 ```
 
-4. **Generate application key**
-
-```bash
-php artisan key:generate
-```
-
-5. **Run migrations and seeders**
+4. **Run migrations and seeders**
 
 ```bash
 php artisan migrate --seed
 ```
 
-6. **Run the Laravel server**
+5. **Run the Laravel server**
 
 ```bash
 php artisan serve
