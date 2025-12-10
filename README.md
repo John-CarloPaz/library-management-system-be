@@ -2,7 +2,7 @@
 
  ### A Laravel 10 backend for managing library branches, users, acquisitions, procurements, and catalogue data with role-based access control.
 
-🚀 Installation Guide (Recommended Order)
+## 🚀 Installation Guide (Recommended Order)
 
 This guide assumes a fresh machine or new developer setup.
 Follow the steps exactly in order.
@@ -109,7 +109,7 @@ App will run at:
 Optional: Run Frontend Dev Server (If Using Vite)
 npm run dev
 
-🌐 Branch IP Access Control
+## 🌐 Branch IP Access Control
 
 The backend restricts API access based on a branch's public IP.
 
@@ -119,22 +119,15 @@ Unknown IPs → 403 Access Denied
 
 Ensure the requesting device/server uses the correct public IP.
 
-🔌 API Endpoints (Examples)
+## 🔌 API Endpoints (Examples)
 Method	Endpoint	Description
-GET	/api/branches	List branches
-GET	/api/users	List users
-GET	/api/books	List books
-POST	/api/print-id	Generate printable ID
-📝 Notes
+// Refer to the Postman Collection 
 
+## 📝 Notes
 Ensure .env is correctly configured before running migrations.
-
 Always use HTTPS in production.
-
 PostgreSQL is required—MySQL is not supported unless configured manually.
-
 Works well with Vue.js, React, or any frontend framework.
 
-📄 License
-
+## 📄 License
 MIT License © 2025
