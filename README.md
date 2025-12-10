@@ -4,10 +4,10 @@
 
 ## 🚀 Installation Guide (Recommended Order)
 
-This guide assumes a fresh machine or new developer setup.
+### This guide assumes a fresh machine or new developer setup.
 Follow the steps exactly in order.
 
-✅ 1. Install Laravel Dependencies (Before Cloning the Project)
+1. Install Laravel Dependencies (Before Cloning the Project)
 
 Make sure your machine has the required software installed.
 
@@ -17,90 +17,100 @@ Download from: https://www.php.net/downloads
 
 Check version:
 
+```node
 php -v
+```
 
-Install Composer
-
+1.1 Install Composer
 Download: https://getcomposer.org/download/
 
 Check version:
 
+```node
 composer -V
+```
 
-Install Node.js & npm
+1.2 Install Node.js & npm
 
 Download from: https://nodejs.org
 
 Check versions:
 
+```node
 node -v
 npm -v
+```
 
-Install PostgreSQL
+1.3 Install PostgreSQL
 
 Download:
 https://www.postgresql.org/download/
 
 Verify installation:
 
+```node 
 psql --version
+```
 
-✅ 2. Clone the Repository
+2. Clone the Repository
 
 After dependencies are installed:
 
+```git
 git clone https://github.com/yourusername/library-management-backend.git
 cd library-management-backend
+```
 
-✅ 3. Install Backend (PHP) Dependencies
+3. Install Backend (PHP) Dependencies
 composer install
 
-✅ 4. Install Frontend (Node) Dependencies
+4. Install Frontend (Node) Dependencies
 
 If the project uses Vite, Vue, Tailwind, or other assets:
 
-npm install
+```php
+ npm install
+```
 
-✅ 5. Copy Environment File
+5. Copy Environment File
+```node
 cp .env.example .env
+```
 
-
-Windows:
-
-copy .env.example .env
-
-✅ 6. Configure Environment (.env)
+6. Configure Environment (.env)
 
 Find the database section and update it:
 
+```php
 DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
 DB_PORT=5432
 DB_DATABASE=library_db
 DB_USERNAME=postgres
 DB_PASSWORD=yourpassword
-
+```
 
 Make sure this exact database exists in PostgreSQL:
 
 CREATE DATABASE library_db;
 
-✅ 7. Generate Laravel App Key
-php artisan key:generate
-
-✅ 8. Run Database Migrations & Seeders
+7. Run Database Migrations & Seeders
 
 This creates tables and inserts the initial super admin user.
 
+```node 
 php artisan migrate --seed
+```
 
 🔑 Default Seeded Account
 Role	Email	Password
 Super Admin	superadmin@example.com
 	password123
-✅ 9. Run the Laravel Server
+    
+8. Run the Laravel Server
+```node
 php artisan serve
-
+```
 
 App will run at:
 
