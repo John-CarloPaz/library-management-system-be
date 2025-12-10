@@ -1,6 +1,6 @@
-📚 Library Management System (Backend)
+ # 📚 Library Management System (Backend)
 
-A Laravel 10 backend for managing library branches, users, acquisitions, procurements, and catalogue data with role-based access control.
+ ### A Laravel 10 backend for managing library branches, users, acquisitions, procurements, and catalogue data with role-based access control.
 
 🚀 Installation Guide (Recommended Order)
 
