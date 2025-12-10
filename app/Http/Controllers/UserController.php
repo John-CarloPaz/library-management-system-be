@@ -37,14 +37,13 @@ class UserController extends Controller
 
     public function logout(Request $request)
     {
-        $user = $request->user();
-
-        if ($user) {
-            $user->currentAccessToken()->delete();
-            return response()->json(['message' => 'Logged out successfully']);
+        if (!$request->user()) {
+            return response()->json(['message' => 'Unauthenticated'], 401);
         }
 
-        return response()->json(['message' => 'User not authenticated'], 401);
+        $request->user()->currentAccessToken()->delete();
+
+        return response()->json(['message' => 'Logged out']);
     }
 
     public function createAdmin(Request $request) {
@@ -56,6 +55,7 @@ class UserController extends Controller
                 'username' => 'required|string|max:255',
                 'email' => 'required|string|email|max:255|unique:users',
                 'employee_id' => 'nullable|string|max:50|unique:users',
+                'employee_type' => 'required|in:dean,administrator,assistant,chief_librarian',
                 'password' => 'required|string|min:8',
                 'first_name' => 'required|string|max:100',
                 'last_name' => 'required|string|max:100',
@@ -70,6 +70,7 @@ class UserController extends Controller
                 'email' => $validatedData['email'],
                 'password' => bcrypt($validatedData['password']),
                 'employee_id' => $validatedData['employee_id'] ?? null,
+                'employee_type' => $validatedData['employee_type'],
                 'first_name' => $validatedData['first_name'],
                 'last_name' => $validatedData['last_name'],
                 'middle_name' => $validatedData['middle_name'] ?? null,

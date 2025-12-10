@@ -28,6 +28,7 @@ class User extends Authenticatable
         'first_name',
         'last_name',
         'employee_id',
+        'employee_type',
         'suffix',
         'middle_name',
     ];
@@ -63,4 +64,10 @@ class User extends Authenticatable
     {
         return $this->hasMany(Student::class, 'created_by');
     }
+
+    public function requestedProcurements()
+    {
+        return $this->hasMany(Procurement::class, 'requested_by');
+    }
+
 }
