@@ -13,16 +13,21 @@ class Student extends Model
         'middle_name',
         'suffix',
         'email',
-        'student_number',
+        'student_id',
         'program',
         'year_level',
         'status',
         'created_by',
-        'updated_by'
+        'updated_by',
+        'qr_code'
     ];
 
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+    public function borrows()
+    {
+        return $this->hasMany(Borrow::class, 'student_id');
     }
 }

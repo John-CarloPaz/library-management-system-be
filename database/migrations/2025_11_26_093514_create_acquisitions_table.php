@@ -25,6 +25,8 @@ return new class extends Migration
             $table->enum("acquisition_method", ['book_fair', 'supplier', 'donation'])->default('supplier');
             $table->string("supplier_name")->nullable();
             $table->integer("cost")->nullable();
+            $table->float("total_cost")->nullable();
+            $table->foreignId("branch_id")->nullable()->constrained('branches')->onDelete('cascade');
             $table->date("date_acquired")->nullable();
             $table->integer("quantity_acquired")->nullable();
             $table->enum("acquisition_status", ['received', 'partial', 'missing', 'cancelled', 'pending'])->default('pending');

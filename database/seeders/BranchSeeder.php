@@ -19,6 +19,9 @@ class BranchSeeder extends Seeder
             'address' => '123 Main St, Cityville',
             'details' => 'The primary branch of the organization.',
             'public_ip' => '127.0.0.1',
+            'is_main_branch' => true,
+            'created_by' => 'Seeder',
+            'updated_by' => 'Seeder',
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -27,6 +30,9 @@ class BranchSeeder extends Seeder
             'address' => '456 East St, Cityville',
             'details' => 'The eastern branch of the organization.',
             'public_ip' => '120.29.77.240',
+            'created_by' => 'Seeder',
+            'updated_by' => 'Seeder',
+            'is_main_branch' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -35,6 +41,9 @@ class BranchSeeder extends Seeder
             'address' => '789 West St, Cityville',
             'details' => 'The western branch of the organization.',
             'public_ip' => '120.29.77.240',
+            'created_by' => 'Seeder',
+            'updated_by' => 'Seeder',
+            'is_main_branch' => false,
             'created_at' => now(),
             'updated_at' => now(),
         ]);

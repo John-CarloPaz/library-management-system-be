@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\GenericActionEvent;
 use App\Models\Procurement;
 use App\Models\Acquisition;
 use Illuminate\Http\Request;
@@ -28,6 +29,16 @@ class ProcurementController extends Controller
 
         $this->createAcquisitionIfNeeded($procurement, $user);
 
+
+        GenericActionEvent::dispatch([
+            'resource_type' => 'procurement',
+            'action' => 'create',
+            'resource_id' => $procurement->id,
+            'user_id' => auth()->id(),
+            'user_name' => auth()->user()->username,
+            'timestamp' => now(),
+        ]);
+
         return response()->json([
             'message' => 'Procurement request created successfully.',
             'procurement' => $procurement,
@@ -52,12 +63,30 @@ class ProcurementController extends Controller
 
         $this->createAcquisitionIfNeeded($procurement, $user);
 
+
+        GenericActionEvent::dispatch([
+            'resource_type' => 'procurement',
+            'action' => 'update',
+            'resource_id' => $procurement->id,
+            'user_id' => auth()->id(),
+            'user_name' => auth()->user()->username,
+            'timestamp' => now(),
+        ]);
+
+
         return response()->json([
             'message' => 'Procurement request updated successfully.',
             'procurement' => $procurement,
         ]);
     }
+    public function getAllProcurements()
+    {
+        $procurements = Procurement::all();
 
+        return response()->json([
+            'procurements' => $procurements,
+        ]);
+    }
     /**
      * Get all active procurements.
      */
@@ -71,18 +100,6 @@ class ProcurementController extends Controller
     }
 
     /**
-     * Get a specific procurement by ID.
-     */
-    public function getProcurementById($id)
-    {
-        $procurement = Procurement::with('department', 'requestedBy', 'acquisitions')->findOrFail($id);
-
-        return response()->json([
-            'procurement' => $procurement,
-        ]);
-    }
-
-    /**
      * Archive a procurement request.
      */
     public function archiveProcurement($id)
@@ -90,10 +107,59 @@ class ProcurementController extends Controller
         $procurement = Procurement::findOrFail($id);
         $procurement->update(['is_archived' => true]);
 
+        GenericActionEvent::dispatch([
+            'resource_type' => 'procurement',
+            'action' => 'archive',
+            'resource_id' => $procurement->id,
+            'user_id' => auth()->id(),
+            'user_name' => auth()->user()->username,
+            'timestamp' => now(),
+        ]);
+
         return response()->json([
             'message' => 'Procurement request archived successfully.',
         ]);
     }
+
+    public function viewProcurement($id)
+    {
+        $procurement = Procurement::with( 'acquisitions')->findOrFail($id);
+
+        return response()->json([
+            'procurement' => $procurement,
+        ]);
+    }
+
+    public function restoreProcurement($id)
+    {
+        $procurement = Procurement::findOrFail($id);
+        $procurement->update(['is_archived' => false]);
+
+
+        GenericActionEvent::dispatch([
+            'resource_type' => 'procurement',
+            'action' => 'restore',
+            'resource_id' => $procurement->id,
+            'user_id' => auth()->id(),
+            'user_name' => auth()->user()->username,
+            'timestamp' => now(),
+        ]);
+
+        return response()->json([
+            'message' => 'Procurement request restored successfully.',
+        ]);
+    }
+
+    public function getAllArchivedProcurements()
+    {
+        $procurements = Procurement::where('is_archived', true)->get();
+
+        return response()->json([
+            'procurements' => $procurements,
+        ]);
+    }
+
+
 
     /**
      * Validate procurement request data.
@@ -142,7 +208,7 @@ class ProcurementController extends Controller
     private function createAcquisitionIfNeeded(Procurement $procurement, $user)
     {
         if ($procurement->admin_approval === 'approved') {
-            Acquisition::firstOrCreate(
+            $acquisition = Acquisition::firstOrCreate(
                 ['procurement_id' => $procurement->id],
                 [
                     'title' => $procurement->title,
@@ -164,6 +230,15 @@ class ProcurementController extends Controller
                     'updated_by' => $user->username,
                 ]
             );
+
+            GenericActionEvent::dispatch([
+                'resource_type' => 'acquisition',
+                'action' => 'create',
+                'resource_id' => $acquisition->id,
+                'user_id' => auth()->id(),
+                'user_name' => auth()->user()->username,
+                'timestamp' => now(),
+            ]);
         }
     }
 }

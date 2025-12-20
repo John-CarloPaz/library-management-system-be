@@ -8,6 +8,12 @@ use Illuminate\Support\Facades\Log;
 
 class UserController extends Controller
 {
+
+    public function testBroadcast()
+    {
+        broadcast(new \App\Events\GenericActionEvent(['test' => 'message']));
+        return response()->json(['message' => 'Broadcast event dispatched']);
+    }
     public function index()
     {
         return response()->json(['message' => 'UserController index method']);
@@ -44,6 +50,60 @@ class UserController extends Controller
         $request->user()->currentAccessToken()->delete();
 
         return response()->json(['message' => 'Logged out']);
+    }
+
+    public function getAllUsers() {
+        try {
+            $users = User::with('branch')->get();
+            return response()->json(['users' => $users], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching users: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to fetch users', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function getUserById($id) {
+        try {
+            $user = User::findOrFail($id);
+            $requestedBooks = $user->requestedProcurements;
+
+            return response()->json(['user' => $user], 200);
+        } catch (\Exception $e) {
+            Log::error('Error fetching user by ID: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to fetch user', 'error' => $e->getMessage()], 500);
+        }
+    }
+
+    public function editAdmin(Request $request, $id) {
+        try {
+            $validatedData = $request->validate([
+                'username' => 'sometimes|required|string|max:255',
+                'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $id,
+                'employee_id' => 'sometimes|nullable|string|max:50|unique:users,employee_id,' . $id,
+                'employee_type' => 'sometimes|required|in:dean,administrator,assistant,chief_librarian',
+                'password' => 'sometimes|required|string|min:8',
+                'first_name' => 'sometimes|required|string|max:100',
+                'last_name' => 'sometimes|required|string|max:100',
+                'middle_name' => 'sometimes|nullable|string|max:100',
+                'suffix' => 'sometimes|nullable|string|max:50',
+                'role' => 'sometimes|required|in:super_admin,branch_admin,admin',
+                'branch_id' => 'sometimes|required|exists:branches,id',
+            ]);
+
+            $user = User::findOrFail($id);
+
+            if (isset($validatedData['password'])) {
+                $validatedData['password'] = bcrypt($validatedData['password']);
+            }
+
+            $user->update($validatedData);
+
+            return response()->json(['message' => 'Admin user updated successfully', 'user' => $user], 200);
+        } catch (\Exception $e) {
+            Log::error('Error updating admin user: ' . $e->getMessage());
+            return response()->json(['message' => 'Failed to update admin user', 'error' => $e->getMessage()], 500);
+        }
+
     }
 
     public function createAdmin(Request $request) {

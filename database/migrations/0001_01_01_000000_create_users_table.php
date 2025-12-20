@@ -28,7 +28,7 @@ return new class extends Migration
             $table->enum('role', ['super_admin', 'branch_admin', 'admin']);
             $table->foreignId('branch_id')->nullable()->constrained()->onDelete('set null');
 
-            $table->boolean('is_active')->default(false);
+            $table->boolean('is_active')->default(true);
             $table->timestamp('last_login_at')->nullable();
             $table->rememberToken();
             $table->timestamps();

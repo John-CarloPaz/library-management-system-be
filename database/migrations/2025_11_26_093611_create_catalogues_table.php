@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('catalogues', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('acquisition_id')->constrained();
+            $table->foreignId('acquisition_id')->nullable()->constrained();
             $table->integer("number_of_copies")->nullable();
             $table->string("dewey")->nullable();
             $table->string('cutter_number')->nullable();
@@ -26,6 +26,8 @@ return new class extends Migration
             $table->string("place_of_publication")->nullable();
             $table->year("year_of_publication")->nullable();
             $table->boolean("is_provisional");
+            $table->boolean("is_archived");
+            $table->foreignId('branch_id')->constrained('branches')->onDelete('cascade');
             $table->enum("cataloging_status", ['pending', 'in_progress', 'cataloged', 'ready_for_labeling', 'available', 'on_hold', 'archived'])->default('pending');
             $table->string('created_by');
             $table->string('updated_by');

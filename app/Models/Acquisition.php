@@ -22,7 +22,10 @@ class Acquisition extends Model
         "acquisition_method",
         "supplier_name",
         "cost",
+        'quantity_acquired',
         "date_acquired",
+        "total_cost",
+        "branch_id",
         "acquisition_status",
         "received_by",
         "created_by",
@@ -32,7 +35,10 @@ class Acquisition extends Model
     public function procurement() {
         return $this->belongsTo(Procurement::class, 'procurement_id');
     }
-    public function catalogues() {
+    public function catalogue() {
         return $this->hasOne(Catalogue::class, 'acquisition_id');
+    }
+    public function branch() {
+        return $this->belongsTo(Branch::class, 'branch_id');
     }
 }

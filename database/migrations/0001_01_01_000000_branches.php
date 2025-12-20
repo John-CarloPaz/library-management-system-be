@@ -17,6 +17,11 @@ return new class extends Migration
             $table->string('address')->nullable();
             $table->string('details')->nullable();
             $table->string('public_ip')->nullable();
+            $table->boolean('is_archived')->default(false);
+            $table->boolean('is_main_branch')->default(false);
+            $table->string('created_by');
+            $table->string('updated_by');
+
             $table->timestamps();
         });
     }

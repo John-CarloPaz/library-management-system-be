@@ -19,17 +19,27 @@ class Catalogue extends Model
         "edition",
         "isbn",
         "publisher",
+        "branch_id",
         "place_of_publication",
         "year_of_publication",
         "cataloging_status",
         "is_provisional",
         "created_by",
-        "updated_by"
+        "updated_by",
+        "is_archived"
     ];
     public function acquisition() {
         return $this->belongsTo(Acquisition::class, 'acquisition_id');
     }
     public function books() {
         return $this->hasMany(Book::class, 'catalogue_id');
+    }
+
+    public function branch() {
+        return $this->belongsTo(Branch::class, 'branch_id');
+    }
+    public function borrows()
+    {
+        return $this->hasManyThrough(Borrow::class, Book::class, 'catalogue_id', 'book_id');
     }
 }

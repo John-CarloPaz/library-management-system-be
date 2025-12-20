@@ -19,14 +19,18 @@ return new class extends Migration
             $table->string('suffix')->nullable();
 
             $table->string('email')->unique();
-            $table->integer('student_number')->unique();
+            $table->integer('student_id')->unique();
             $table->string('program');
             $table->integer('year_level');
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');
 
+            $table->string('qr_code')->unique()->nullable();
+            $table->date('expiration_date')->nullable();
             //Audit fields
-            $table->foreignId('created_by')->nullable()->constrained('users')->nullOnDelete();
-            $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
+            $table->boolean('is_archived')->default(false);
+            $table->string('created_by');
+            $table->string('updated_by');
+
             $table->timestamps();
         });
     }
