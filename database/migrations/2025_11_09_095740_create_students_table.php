@@ -13,13 +13,15 @@ return new class extends Migration
     {
         Schema::create('students', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('semester_id')->nullable()->constrained('semesters')->nullOnDelete();
+
             $table->string('first_name');
             $table->string('last_name');
             $table->string('middle_name')->nullable();
             $table->string('suffix')->nullable();
 
             $table->string('email')->unique();
-            $table->integer('student_id')->unique();
+            $table->unsignedBigInteger('student_id')->unique();
             $table->string('program');
             $table->integer('year_level');
             $table->enum('status', ['active', 'inactive', 'suspended'])->default('active');

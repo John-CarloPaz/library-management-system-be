@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('created_by');
             $table->string('updated_by');
             $table->date('expiration_date')->nullable();
-            $table->enum('book_status', ['active', 'for_archiving', 'lost', 'damaged', 'under_repair', 'borrowed'])->default('active');
+            $table->enum('book_status', ['active', 'for_archiving', 'lost', 'damaged', 'under_repair'])->default('active');
             $table->timestamps();
             $table->unique(['catalogue_id', 'copy_number']);
         });

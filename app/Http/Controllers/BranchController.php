@@ -4,15 +4,44 @@ namespace App\Http\Controllers;
 
 use App\Models\Branch;
 use App\Models\User;
+use App\Services\ListQueryService;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class BranchController extends Controller
 {
+    public function __construct(
+        private PermissionService $permissions,
+        private ListQueryService $lists,
+    ) {
+    }
     // Fetch all branches
-    public function index()
+    public function index(Request $request)
     {
-        $branches = Branch::all();
+        $branches = $this->lists->build(
+            $request,
+            Branch::query(),
+            [
+                'archived_field' => 'is_archived',
+                'search_fields' => ['name', 'address'],
+            ]
+        );
+
+        return response()->json($branches, 200);
+    }
+
+    // Fetch active (non-archived) branches
+    public function listActive(Request $request)
+    {
+        $branches = $this->lists->build(
+            $request,
+            Branch::query()->where('is_archived', false),
+            [
+                'archived_field' => 'is_archived',
+            ]
+        );
+
         return response()->json($branches, 200);
     }
 
@@ -26,11 +55,16 @@ class BranchController extends Controller
     // Create a new branch
     public function createBranch(Request $request)
     {
+        if (!$this->permissions->canManageBranches(Auth::user())) {
+            return response()->json(['message' => 'Access denied: Only Super Admin can manage branches.'], 403);
+        }
+
         $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'address' => 'required|string|max:255',
             'details' => 'required|string|max:255',
-            'public_ip' => 'required|ip',
+            'public_ip' => 'nullable|ip|required_without:public_ipv6',
+            'public_ipv6' => 'nullable|ip|required_without:public_ip',
             'is_main_branch' => 'sometimes|boolean',
             'is_archived' => 'sometimes|boolean',
             'created_by' => 'sometimes|string|max:255',
@@ -57,8 +91,8 @@ class BranchController extends Controller
     // Update an existing branch
     public function editBranch(Request $request, $id)
     {
-        if (Auth::user()->role == 'admin') {
-            return response()->json(['message' => 'Unauthorized'], 403);
+        if (!$this->permissions->canManageBranches(Auth::user())) {
+            return response()->json(['message' => 'Access denied: Only Super Admin can manage branches.'], 403);
         }
 
         $branch = Branch::findOrFail($id);
@@ -67,7 +101,8 @@ class BranchController extends Controller
             'name' => 'sometimes|required|string|max:255',
             'address' => 'sometimes|required|string|max:255',
             'details' => 'sometimes|required|string|max:255',
-            'public_ip' => 'sometimes|required|ip',
+            'public_ip' => 'sometimes|nullable|ip',
+            'public_ipv6' => 'sometimes|nullable|ip',
             'is_main_branch' => 'sometimes|boolean',
             'is_archived' => 'sometimes|boolean',
             'updated_by' => 'sometimes|string|max:255',
@@ -94,6 +129,10 @@ class BranchController extends Controller
     // Archive a branch
     public function archiveBranch($id)
     {
+        if (!$this->permissions->canManageBranches(Auth::user())) {
+            return response()->json(['message' => 'Access denied: Only Super Admin can manage branches.'], 403);
+        }
+
         $branch = Branch::findOrFail($id);
 
         $hasActiveUsers = User::where('branch_id', $branch->id)
@@ -102,6 +141,18 @@ class BranchController extends Controller
 
         if ($hasActiveUsers) {
             return response()->json(['message' => 'Cannot archive branch. Some users are still active.'], 400);
+        }
+
+        // Business rule: branch cannot be archived when there are available catalogues in this branch
+        $hasAvailableCatalogues = \App\Models\Catalogue::where('branch_id', $branch->id)
+            ->where('cataloging_status', 'available')
+            ->where('is_archived', false)
+            ->exists();
+
+        if ($hasAvailableCatalogues) {
+            return response()->json([
+                'message' => 'Cannot archive branch. There are available catalogues in this branch.',
+            ], 400);
         }
 
         $branch->update([
@@ -114,6 +165,10 @@ class BranchController extends Controller
 
     public function restoreBranch($id)
     {
+        if (!$this->permissions->canManageBranches(Auth::user())) {
+            return response()->json(['message' => 'Access denied: Only Super Admin can manage branches.'], 403);
+        }
+
         $branch = Branch::findOrFail($id);
 
         $branch->update([

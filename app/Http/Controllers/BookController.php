@@ -4,11 +4,15 @@ namespace App\Http\Controllers;
 
 use App\Events\GenericActionEvent;
 use App\Models\Book;
+use App\Services\ListQueryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class BookController extends Controller
 {
+    public function __construct(private ListQueryService $lists)
+    {
+    }
     public function editBookStatus(Request $request, $id)
     {
         $validated = $this->validateBookStatus($request);
@@ -20,7 +24,11 @@ class BookController extends Controller
             return response()->json(['message' => 'Access denied.'], 403);
         }
 
-        $book->update(array_merge($validated, ['updated_by' => $user->username]));
+        // Map validated request status to the actual DB column
+        $book->update([
+            'book_status' => $validated['status'],
+            'updated_by' => $user->username,
+        ]);
 
 
         GenericActionEvent::dispatch([
@@ -45,6 +53,13 @@ class BookController extends Controller
 
         if ($user->role === 'admin') {
             return response()->json(['message' => 'Access denied.'], 403);
+        }
+
+        // Business rule: book cannot be archived when status is active or under_repair
+        if (in_array($book->book_status, ['active', 'under_repair'], true)) {
+            return response()->json([
+                'message' => 'Cannot archive a book with status active or under_repair.',
+            ], 400);
         }
 
         $book->update([
@@ -78,7 +93,16 @@ class BookController extends Controller
 
     public function listBooks(Request $request)
     {
-        $books = Book::with('catalogue', 'branch')->get();
+        $books = $this->lists->build(
+            $request,
+            Book::with('catalogue', 'branch'),
+            [
+                'status_field' => 'book_status',
+                'archived_field' => 'is_archived',
+                'branch_field' => 'branch_id',
+                'search_fields' => ['reference_number', 'catalogue.title'],
+            ]
+        );
 
         return response()->json([
             'books' => $books,
@@ -94,17 +118,6 @@ class BookController extends Controller
             'book' => $book,
         ]);
     }
-
-    public function listArchivedBooks(Request $request)
-    {
-        $books = Book::with('catalogue', 'branch')->where('is_archived', true)->get();
-
-        return response()->json([
-            'archived_books' => $books,
-        ]);
-    }
-
-
 
     public function restoreBook(Request $request, $id)
     {
@@ -138,7 +151,12 @@ class BookController extends Controller
     private function validateBookStatus(Request $request)
     {
         return $request->validate([
-            'status' => 'required|in:available,for_archiving,lost,damaged,under_repair,borrowed',
+            // This is the *logical* status coming from the client; we
+            // map it to the book_status column in editBookStatus.
+            // We intentionally keep borrowing state separate on
+            // the is_borrowed flag instead of using a 'borrowed'
+            // enum value here.
+            'status' => 'required|in:active,for_archiving,lost,damaged,under_repair',
         ]);
     }
 }

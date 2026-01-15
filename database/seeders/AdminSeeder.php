@@ -14,9 +14,9 @@ class AdminSeeder extends Seeder
     public function run(): void
     {
         DB::table('users')->insert([
-            'employee_id' => 'SA001',
+            'employee_id' => '0122302434',
             'employee_type' => 'chief_librarian',
-            'email' => 'superadmin@example.com',
+            'email' => 'superadmin@gmail.com',
             'username' => 'superadmin',
             'password' => Hash::make('password123'),
             'first_name' => 'Super',
@@ -30,7 +30,7 @@ class AdminSeeder extends Seeder
         DB::table('users')->insert([
             'employee_id' => 'SA002',
             'employee_type' => 'dean',
-            'email' => 'dean@example.com',
+            'email' => 'dean@gmail.com',
             'username' => 'dean1',
             'password' => Hash::make('password123'),
             'first_name' => 'Dean',

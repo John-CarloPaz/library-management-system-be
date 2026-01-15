@@ -16,6 +16,7 @@ class Book extends Model
         "is_archived",
         "created_by",
         "updated_by",
+        "book_status",
         "expiration_date",
         "branch_id",
         "book_status",

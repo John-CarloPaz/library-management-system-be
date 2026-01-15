@@ -40,9 +40,11 @@ class Borrow extends Model
             $this->status === 'borrowed' &&
             Carbon::now()->gt($this->due_date)
         ) {
+            $overdueDays = Carbon::now()->diffInDays(Carbon::parse($this->due_date));
             $this->update([
                 'status' => 'overdue',
                 'is_penalized' => true,
+                'penalty_amount' => $overdueDays * 8,
             ]);
         }
     }

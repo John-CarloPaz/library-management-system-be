@@ -21,7 +21,7 @@ return new class extends Migration
             $table->string("place_of_publication")->nullable();
             $table->year("year_of_publication")->nullable();
             $table->integer("quantity_requested");
-            $table->foreignId("requested_by")->constrained('users')->nullOnDelete();
+            $table->foreignId("requested_by")->nullable()->constrained('users')->nullOnDelete();
             $table->enum("admin_approval", ['approved', 'rejected', 'pending']);
             $table->boolean('is_archived')->default(false);
             $table->string('created_by');

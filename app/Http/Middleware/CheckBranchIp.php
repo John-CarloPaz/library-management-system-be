@@ -3,7 +3,9 @@
 namespace App\Http\Middleware;
 
 use Closure;
+use App\Models\Branch;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Symfony\Component\HttpFoundation\Response;
 
 class CheckBranchIp
@@ -15,12 +17,19 @@ class CheckBranchIp
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
-        $userIP = $request->ip();
-
-        if ($user->branch->public_ip !== $userIP) {
-            return response()->json(['message' => 'Access denied: You are not allowed to login from this location.'], 403);
+        if (auth()->check() && auth()->user()->role === 'super_admin') {
+            return $next($request);
         }
+        
+        $user = auth()->user();
+        $ip = $request->ip();
+    
+        $branchByIp = Branch::where('public_ip', $ip)->first();
+
+        if ($branchByIp && $branchByIp->id !== $user->branch_id) {
+            return response()->json(['message' => 'Access denied: cannot login from this branch'], 403);
+        }
+
         return $next($request);
     }
 }

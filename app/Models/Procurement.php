@@ -22,6 +22,7 @@ class Procurement extends Model
       "department_id",
       "requested_by",
       "created_by",
+      "is_archived",
       "updated_by",
     ];
 

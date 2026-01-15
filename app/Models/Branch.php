@@ -12,6 +12,7 @@ class Branch extends Model
         'address',
         'details',
         'public_ip',
+        'public_ipv6',
         'is_archived',
         'is_main_branch',
         'created_by',

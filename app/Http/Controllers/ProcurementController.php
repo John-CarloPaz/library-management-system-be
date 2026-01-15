@@ -3,21 +3,33 @@
 namespace App\Http\Controllers;
 
 use App\Events\GenericActionEvent;
+use App\Events\NotificationCreated;
 use App\Models\Procurement;
 use App\Models\Acquisition;
+use App\Models\Notification;
+use App\Services\ListQueryService;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class ProcurementController extends Controller
 {
+    public function __construct(
+        private PermissionService $permissions,
+        private ListQueryService $lists,
+    ) {
+    }
     /**
      * Create a new procurement request.
      */
     public function createProcurement(Request $request)
     {
-        $validated = $this->validateProcurement($request);
-
         $user = Auth::user();
+        if (!$this->permissions->canCreateProcurement($user)) {
+            return response()->json(['message' => 'Access denied: Cannot create procurement.'], 403);
+        }
+
+        $validated = $this->validateProcurement($request);
         $adminApproval = $this->getAdminApproval($user);
 
         $procurement = Procurement::create(array_merge($validated, [
@@ -28,6 +40,11 @@ class ProcurementController extends Controller
         ]));
 
         $this->createAcquisitionIfNeeded($procurement, $user);
+
+        // Notify requester when procurement is auto-approved on creation
+        if (in_array($procurement->admin_approval, ['approved', 'rejected'], true)) {
+            $this->notifyProcurementStatusChange($procurement, $procurement->admin_approval);
+        }
 
 
         GenericActionEvent::dispatch([
@@ -53,13 +70,25 @@ class ProcurementController extends Controller
         $validated = $this->validateProcurement($request, true);
 
         $procurement = Procurement::findOrFail($id);
+        $previousStatus = $procurement->admin_approval;
         $user = Auth::user();
 
+        if ($user->role === 'admin' && $validated['admin_approval'] === 'approved') {
+            return response()->json(['message' => 'Access denied: Admin cannot approve procurements.'], 403);
+        }
+        
         if (!$this->canEditApproval($user, $validated)) {
             return response()->json(['message' => 'Access denied: Only Super Admin and Branch Admin can edit procurement approvals.'], 403);
         }
 
         $procurement->update(array_merge($validated, ['updated_by' => $user->username]));
+
+        // If admin_approval changed to approved or rejected, notify requester
+        $procurement->refresh();
+        $newStatus = $procurement->admin_approval;
+        if ($previousStatus !== $newStatus && in_array($newStatus, ['approved', 'rejected'], true)) {
+            $this->notifyProcurementStatusChange($procurement, $newStatus);
+        }
 
         $this->createAcquisitionIfNeeded($procurement, $user);
 
@@ -79,20 +108,17 @@ class ProcurementController extends Controller
             'procurement' => $procurement,
         ]);
     }
-    public function getAllProcurements()
+    public function getAllProcurements(Request $request)
     {
-        $procurements = Procurement::all();
-
-        return response()->json([
-            'procurements' => $procurements,
-        ]);
-    }
-    /**
-     * Get all active procurements.
-     */
-    public function getAllActiveProcurements()
-    {
-        $procurements = Procurement::where('is_archived', false)->get();
+        $procurements = $this->lists->build(
+            $request,
+            Procurement::query(),
+            [
+                'status_field' => 'admin_approval',
+                'archived_field' => 'is_archived',
+                'search_fields' => ['title', 'author'],
+            ]
+        );
 
         return response()->json([
             'procurements' => $procurements,
@@ -105,6 +131,14 @@ class ProcurementController extends Controller
     public function archiveProcurement($id)
     {
         $procurement = Procurement::findOrFail($id);
+
+        // Only pending or rejected procurements can be archived
+        if ($procurement->admin_approval === 'approved') {
+            return response()->json([
+                'message' => 'Cannot archive an approved procurement request.'
+            ], 400);
+        }
+
         $procurement->update(['is_archived' => true]);
 
         GenericActionEvent::dispatch([
@@ -150,17 +184,8 @@ class ProcurementController extends Controller
         ]);
     }
 
-    public function getAllArchivedProcurements()
-    {
-        $procurements = Procurement::where('is_archived', true)->get();
-
-        return response()->json([
-            'procurements' => $procurements,
-        ]);
-    }
-
-
-
+    // All procurement list variations (active, archived, all, by status) are now handled
+    // via query parameters on getAllProcurements using ListQueryService.
     /**
      * Validate procurement request data.
      */
@@ -199,7 +224,7 @@ class ProcurementController extends Controller
      */
     private function canEditApproval($user, $validated): bool
     {
-        return in_array($user->role, ['super_admin', 'branch_admin']) && isset($validated['admin_approval']);
+        return $this->permissions->canEditProcurementApproval($user) && isset($validated['admin_approval']);
     }
 
     /**
@@ -240,5 +265,31 @@ class ProcurementController extends Controller
                 'timestamp' => now(),
             ]);
         }
+    }
+
+    /**
+     * Create and broadcast a notification when a procurement is approved or rejected.
+     */
+    private function notifyProcurementStatusChange(Procurement $procurement, string $status): void
+    {
+        if (!$procurement->requested_by) {
+            return;
+        }
+
+        $statusLabel = $status === 'approved' ? 'approved' : 'rejected';
+
+        $notification = Notification::create([
+            'user_id' => $procurement->requested_by,
+            'type' => 'procurement',
+            'title' => 'Procurement ' . $statusLabel,
+            'message' => "Your procurement '{$procurement->title}' was {$statusLabel}.",
+            'data' => [
+                'procurement_id' => $procurement->id,
+                'status' => $status,
+                'title' => $procurement->title,
+            ],
+        ]);
+
+        NotificationCreated::dispatch($notification);
     }
 }

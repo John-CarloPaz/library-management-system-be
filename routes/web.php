@@ -7,3 +7,7 @@ Route::get('/', function () {
 });
 
 Route::get('/test-broadcast', [\App\Http\Controllers\UserController::class, 'testBroadcast']);
+
+Route::get('/foo', function () {
+    Artisan::call('storage:link');
+});

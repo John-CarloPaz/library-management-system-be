@@ -5,12 +5,20 @@ namespace App\Http\Controllers;
 use App\Events\GenericActionEvent;
 use App\Models\Acquisition;
 use App\Models\Catalogue;
+use App\Services\ListQueryService;
+use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 
 class AcquisitionController extends Controller
 {
+    public function __construct(
+        private PermissionService $permissions,
+        private ListQueryService $lists,
+    ) {
+    }
     /**
      * Create a new acquisition (super_admin only).
      */
@@ -53,6 +61,115 @@ class AcquisitionController extends Controller
             'message' => 'Acquisition created successfully.',
             'acquisition' => $acquisition,
         ], 201);
+    }
+
+    /**
+     * Bulk create acquisitions from a CSV file.
+     * Expects a multipart/form-data upload with field name "file".
+     */
+    public function bulkCreateFromCsv(Request $request)
+    {
+        $user = Auth::user();
+
+        if (!$this->canManageAcquisitions($user)) {
+            return $this->accessDeniedResponse();
+        }
+
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt',
+        ]);
+
+        $path = $request->file('file')->getRealPath();
+        $rows = array_map('str_getcsv', file($path));
+
+        if (empty($rows) || count($rows) < 2) {
+            return response()->json([
+                'message' => 'CSV file is empty or missing data rows.',
+            ], 400);
+        }
+
+        $header = array_map('trim', array_shift($rows));
+
+        $created = [];
+        $errors = [];
+        $rowNumber = 1; // data rows start after header
+
+        foreach ($rows as $row) {
+            $rowNumber++;
+
+            if (count(array_filter($row, fn($v) => $v !== null && $v !== '')) === 0) {
+                continue;
+            }
+
+            if (count($row) !== count($header)) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'errors' => ['Column count does not match header.'],
+                ];
+                continue;
+            }
+
+            $data = array_combine($header, $row);
+
+            try {
+                $rules = $this->getAcquisitionValidationRules($data, false);
+                $validator = Validator::make($data, $rules);
+
+                if ($validator->fails()) {
+                    $errors[] = [
+                        'row' => $rowNumber,
+                        'errors' => $validator->errors()->all(),
+                    ];
+                    continue;
+                }
+
+                $validated = $validator->validated();
+
+                if ($validated['acquisition_status'] === 'received') {
+                    if ($this->isInvalidReceivedStatus($validated, new Acquisition())) {
+                        $errors[] = [
+                            'row' => $rowNumber,
+                            'errors' => ['Cannot set status to received. All required fields must be provided.'],
+                        ];
+                        continue;
+                    }
+                    $validated['received_by'] = $user->username;
+                }
+
+                $acquisition = Acquisition::create(array_merge($validated, [
+                    'total_cost' => ($validated['cost'] ?? 0) * ($validated['quantity_acquired'] ?? $validated['quantity_requested']),
+                    'created_by' => $user->username,
+                    'updated_by' => $user->username,
+                    'is_archived' => false,
+                ]));
+
+                $this->createCatalogueIfNeeded($validated, $acquisition, $user, true, $acquisition->getOriginal('acquisition_status'));
+
+                GenericActionEvent::dispatch([
+                    'resource_type' => 'acquisition',
+                    'action' => 'create',
+                    'resource_id' => $acquisition->id,
+                    'user_id' => auth()->id(),
+                    'user_name' => auth()->user()->username,
+                    'timestamp' => now(),
+                ]);
+
+                $created[] = $acquisition;
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'errors' => [$e->getMessage()],
+                ];
+            }
+        }
+
+        return response()->json([
+            'message' => 'Bulk acquisition import completed.',
+            'created_count' => count($created),
+            'error_count' => count($errors),
+            'created' => $created,
+            'errors' => $errors,
+        ]);
     }
 
     /**
@@ -102,32 +219,28 @@ class AcquisitionController extends Controller
     /**
      * List all acquisitions (accessible to all roles).
      */
-    public function listAcquisitions()
+    public function listAcquisitions(Request $request)
     {
-        $acquisitions = Acquisition::all();
+            \Log::info('listAcquisitions query', $request->query());
+
+        $acquisitions = $this->lists->build(
+            $request,
+            Acquisition::query(),
+            [
+                'status_field' => 'acquisition_status',
+                'archived_field' => 'is_archived',
+                'branch_field' => 'branch_id',
+                'search_fields' => ['title', 'author'],
+            ]
+        );
 
         return response()->json([
             'acquisitions' => $acquisitions,
         ]);
     }
 
-    public function listActiveAcquisitions()
-    {
-        $acquisitions = Acquisition::where('is_archived', false)->get();
-
-        return response()->json([
-            'acquisitions' => $acquisitions,
-        ]);
-    }
-
-    public function listArchivedAcquisitions()
-    {
-        $acquisitions = Acquisition::where('is_archived', true)->get();
-
-        return response()->json([
-            'archived_acquisitions' => $acquisitions,
-        ]);
-    }
+    // All acquisitions list variations (active, archived, all, by status) are now handled
+    // via query parameters on listAcquisitions using ListQueryService.
 
     public function restoreAcquisition($id)
     {
@@ -158,21 +271,6 @@ class AcquisitionController extends Controller
         ]);
     }
 
-    /**
-     * View a specific acquisition (accessible to all roles).
-     */
-    public function viewAcquisition($id)
-    {
-        $acquisition = Acquisition::with('catalogue')->findOrFail($id);
-
-        return response()->json([
-            'acquisition' => $acquisition,
-        ]);
-    }
-
-    /**
-     * Archive an acquisition (super_admin only).
-     */
     public function archiveAcquisition($id)
     {
         $user = Auth::user();
@@ -182,6 +280,14 @@ class AcquisitionController extends Controller
         }
 
         $acquisition = Acquisition::findOrFail($id);
+
+        // Business rule: acquisitions with status 'received' cannot be archived
+        if ($acquisition->acquisition_status === 'received') {
+            return response()->json([
+                'message' => 'Cannot archive an acquisition with status received.',
+            ], 400);
+        }
+
         $acquisition->update([
             'is_archived' => true,
             'updated_by' => $user->username,
@@ -203,9 +309,31 @@ class AcquisitionController extends Controller
     }
 
     /**
+     * View a specific acquisition (accessible to all roles).
+     */
+    public function viewAcquisition($id)
+    {
+        $acquisition = Acquisition::with('catalogue')->findOrFail($id);
+
+        return response()->json([
+            'acquisition' => $acquisition,
+        ]);
+    }
+
+    /**
      * Validate acquisition request data.
      */
     private function validateAcquisition(Request $request, $isEdit = false): array
+    {
+        $rules = $this->getAcquisitionValidationRules($request->all(), $isEdit);
+
+        return Validator::make($request->all(), $rules)->validate();
+    }
+
+    /**
+     * Get validation rules for acquisition data.
+     */
+    private function getAcquisitionValidationRules(array $data, bool $isEdit = false): array
     {
         $rules = [
             'title' => 'required|string|min:3|max:255',
@@ -232,10 +360,10 @@ class AcquisitionController extends Controller
         ];
 
         if ($isEdit) {
-            $rules = array_intersect_key($rules, $request->all());
+            $rules = array_intersect_key($rules, $data);
         }
 
-        return $request->validate($rules);
+        return $rules;
     }
 
     /**
@@ -243,7 +371,7 @@ class AcquisitionController extends Controller
      */
     private function canManageAcquisitions($user): bool
     {
-        return in_array($user->role, ['super_admin', 'branch_admin']);
+        return $this->permissions->canManageAcquisitions($user);
     }
 
     /**

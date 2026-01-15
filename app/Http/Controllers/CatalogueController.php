@@ -5,14 +5,19 @@ namespace App\Http\Controllers;
 use App\Events\GenericActionEvent;
 use App\Models\Catalogue;
 use App\Models\Book;
+use App\Services\ListQueryService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 use SimpleSoftwareIO\QrCode\Facades\QrCode;
 
 class CatalogueController extends Controller
 {
+    public function __construct(private ListQueryService $lists)
+    {
+    }
     /**
      * Add a new catalogue.
      */
@@ -108,6 +113,119 @@ class CatalogueController extends Controller
     }
 
     /**
+     * Bulk add catalogues from a CSV file.
+     * Expects a multipart/form-data upload with field name "file".
+     */
+    public function bulkAddFromCsv(Request $request)
+    {
+        $user = Auth::user();
+
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt',
+        ]);
+
+        $path = $request->file('file')->getRealPath();
+        $rows = array_map('str_getcsv', file($path));
+
+        if (empty($rows) || count($rows) < 2) {
+            return response()->json([
+                'message' => 'CSV file is empty or missing data rows.',
+            ], 400);
+        }
+
+        $header = array_map('trim', array_shift($rows));
+
+        $created = [];
+        $errors = [];
+        $rowNumber = 1; // data rows start after header
+
+        foreach ($rows as $row) {
+            $rowNumber++;
+
+            // Skip completely empty rows
+            if (count(array_filter($row, fn($v) => $v !== null && $v !== '')) === 0) {
+                continue;
+            }
+
+            if (count($row) !== count($header)) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'errors' => ['Column count does not match header.'],
+                ];
+                continue;
+            }
+
+            $data = array_combine($header, $row);
+
+            try {
+                $rules = $this->getCatalogueValidationRules($data, false);
+                $validator = Validator::make($data, $rules);
+
+                if ($validator->fails()) {
+                    $errors[] = [
+                        'row' => $rowNumber,
+                        'errors' => $validator->errors()->all(),
+                    ];
+                    continue;
+                }
+
+                $validated = $validator->validated();
+                $isProvisional = $this->checkProvisional($validated);
+
+                if ($isProvisional) {
+                    $errors[] = [
+                        'row' => $rowNumber,
+                        'errors' => ['Cannot create catalogue. All required fields must be filled.'],
+                    ];
+                    continue;
+                }
+
+                $catalogue = Catalogue::create(array_merge($validated, [
+                    'is_provisional' => $isProvisional,
+                    'created_by' => $user->username,
+                    'updated_by' => $user->username,
+                    'is_archived' => false,
+                ]));
+
+                if ($validated['cataloging_status'] === 'available') {
+                    if ($this->catalogueHasBooks($catalogue)) {
+                        $errors[] = [
+                            'row' => $rowNumber,
+                            'errors' => ['Books already exist for this catalogue.'],
+                        ];
+                    } else {
+                        $this->generateBookCopiesAsync($catalogue);
+                    }
+                }
+
+                GenericActionEvent::dispatch([
+                    'resource_type' => 'catalogue',
+                    'action' => 'create',
+                    'resource_id' => $catalogue->id,
+                    'user_id' => auth()->id(),
+                    'user_name' => auth()->user()->username,
+                    'timestamp' => now(),
+                ]);
+
+                $created[] = $catalogue;
+            } catch (\Throwable $e) {
+                $errors[] = [
+                    'row' => $rowNumber,
+                    'errors' => [$e->getMessage()],
+                ];
+            }
+        }
+
+        return response()->json([
+            'message' => 'Bulk catalogue import completed.',
+            'created_count' => count($created),
+            'error_count' => count($errors),
+            'created' => $created,
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
      * View a specific catalogue.
      */
     public function viewCatalogue($id)
@@ -122,9 +240,39 @@ class CatalogueController extends Controller
     /**
      * List all catalogues.
      */
-    public function listCatalogues()
+    public function listCatalogues(Request $request)
     {
-        $catalogues = Catalogue::with('acquisition', 'branch')->get();
+        $catalogues = $this->lists->build(
+            $request,
+            Catalogue::with('acquisition', 'branch'),
+            [
+                'status_field' => 'cataloging_status',
+                'archived_field' => 'cataloging_status',
+                'archived_flag' => 'archived',
+                'branch_field' => 'branch_id',
+                'search_fields' => ['title', 'author', 'isbn'],
+            ]
+        );
+
+        return response()->json([
+            'catalogues' => $catalogues,
+        ]);
+    }
+
+    /**
+     * List active (non-archived) catalogues.
+     */
+    public function listActiveCatalogues(Request $request)
+    {
+        $catalogues = $this->lists->build(
+            $request,
+            Catalogue::with('acquisition', 'branch')->where('cataloging_status', '!=', 'archived'),
+            [
+                'status_field' => 'cataloging_status',
+                'archived_field' => 'cataloging_status',
+                'archived_flag' => 'archived',
+            ]
+        );
 
         return response()->json([
             'catalogues' => $catalogues,
@@ -143,13 +291,25 @@ class CatalogueController extends Controller
         }
 
         $catalogue = Catalogue::findOrFail($id);
-
-        $hasActiveBooks = $catalogue->books()->where('book_status', 'borrowed')->exists();
+        // Business rule checks
+        // Cannot archive when any copy is currently borrowed
+        $hasBorrowedBooks = $catalogue->books()->where('is_borrowed', true)->exists();
+        $hasActiveOrUnderRepairBooks = $catalogue->books()
+            ->whereIn('book_status', ['active', 'under_repair'])
+            ->exists();
         $hasPenalizedBorrows = $catalogue->borrows()->where('is_penalized', true)->exists();
         $hasUnpaidFines = $catalogue->borrows()->where('is_fine_paid', false)->exists();
-
-        if ($hasActiveBooks || $hasPenalizedBorrows || $hasUnpaidFines) {
-            return response()->json(['message' => 'Cannot archive catalogue. Some books are active.'], 400);
+        // Cannot archive when there are borrowed books, penalized borrows, unpaid fines,
+        // or when the catalogue is available and has books that are active or under repair.
+        if (
+            $hasBorrowedBooks ||
+            $hasPenalizedBorrows ||
+            $hasUnpaidFines ||
+            ($catalogue->cataloging_status === 'available' && $hasActiveOrUnderRepairBooks)
+        ) {
+            return response()->json([
+                'message' => 'Cannot archive catalogue due to active/under-repair books or outstanding borrows/fines.',
+            ], 400);
         }
 
         $catalogue->update([
@@ -178,23 +338,6 @@ class CatalogueController extends Controller
         ]);
     }
 
-    public function listArchivedCatalogues()
-    {
-        $catalogues = Catalogue::where('cataloging_status', 'archived')->with('acquisition', 'branch')->get();
-
-        return response()->json([
-            'archived_catalogues' => $catalogues,
-        ]);
-    }
-
-    public function listActiveCatalogues()
-    {
-        $catalogues = Catalogue::where('cataloging_status', '!=', 'archived')->with('acquisition', 'branch')->get();
-
-        return response()->json([
-            'active_catalogues' => $catalogues,
-        ]);
-    }
     public function restoreCatalogue($id)
     {
         $user = Auth::user();
@@ -205,7 +348,10 @@ class CatalogueController extends Controller
 
         $catalogue = Catalogue::findOrFail($id);
         $catalogue->update([
-            'cataloging_status' => 'available',
+            // When restoring, catalogue should go back to pending
+            // so it can re-enter the cataloging workflow, not
+            // jump straight to available.
+            'cataloging_status' => 'pending',
             'updated_by' => $user->username,
         ]);
 
@@ -236,6 +382,16 @@ class CatalogueController extends Controller
      */
     private function validateCatalogue(Request $request, $isEdit = false): array
     {
+        $rules = $this->getCatalogueValidationRules($request->all(), $isEdit);
+
+        return Validator::make($request->all(), $rules)->validate();
+    }
+
+    /**
+     * Get validation rules for catalogue data.
+     */
+    private function getCatalogueValidationRules(array $data, bool $isEdit = false): array
+    {
         $rules = [
             'number_of_copies' => 'required|integer|min:1',
             'dewey' => 'required|string',
@@ -253,10 +409,10 @@ class CatalogueController extends Controller
         ];
 
         if ($isEdit) {
-            $rules = array_intersect_key($rules, $request->all());
+            $rules = array_intersect_key($rules, $data);
         }
 
-        return $request->validate($rules);
+        return $rules;
     }
 
     private function catalogueHasBooks(Catalogue $catalogue): bool

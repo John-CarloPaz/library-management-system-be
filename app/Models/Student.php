@@ -17,6 +17,9 @@ class Student extends Model
         'program',
         'year_level',
         'status',
+        'semester_id',
+        'expiration_date',
+        'is_archived',
         'created_by',
         'updated_by',
         'qr_code'
@@ -25,6 +28,11 @@ class Student extends Model
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function semester()
+    {
+        return $this->belongsTo(Semester::class, 'semester_id');
     }
     public function borrows()
     {

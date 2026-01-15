@@ -31,6 +31,8 @@ class User extends Authenticatable
         'employee_type',
         'suffix',
         'middle_name',
+        'is_active',
+        'last_login_at',
     ];
 
     /**
@@ -53,6 +55,8 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'last_login_at' => 'datetime',
         ];
     }
 
@@ -68,6 +72,16 @@ class User extends Authenticatable
     public function requestedProcurements()
     {
         return $this->hasMany(Procurement::class, 'requested_by');
+    }
+
+    public function chats()
+    {
+        return $this->belongsToMany(Chat::class)->withTimestamps();
+    }
+
+    public function chatMessages()
+    {
+        return $this->hasMany(ChatMessage::class);
     }
 
 }
