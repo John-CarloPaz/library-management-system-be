@@ -41,5 +41,19 @@ class AdminSeeder extends Seeder
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+        DB::table('users')->insert([
+            'employee_id' => 'BA001',
+            'employee_type' => 'assistant',
+            'email' => 'branchadmin@gmail.com',
+            'username' => 'branchadmin1',
+            'password' => Hash::make('password123'),
+            'first_name' => 'Branch',
+            'last_name' => 'Admin',
+            'role' => 'branch_admin',
+            'branch_id' => 1,
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 }

@@ -34,6 +34,11 @@ class Borrow extends Model
         return $this->belongsTo(Book::class);
     }
 
+    public function reminderLogs()
+    {
+        return $this->hasMany(BorrowReminderLog::class);
+    }
+
     public function markOverdueIfNeeded(): void
     {
         if (

@@ -28,11 +28,11 @@ class PermissionService
 
     /**
      * Admin management (create/edit/list admins).
-     * Currently only super_admin is allowed.
+     * Super admin and branch admin are allowed.
      */
     public function canManageAdmins(?User $user): bool
     {
-        return $this->isSuperAdmin($user);
+        return $this->hasRole($user, ['super_admin', 'branch_admin']);
     }
 
     /**

@@ -7,6 +7,7 @@ use App\Services\ListQueryService;
 use App\Services\PermissionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 
 class UserController extends Controller
 {
@@ -70,13 +71,24 @@ class UserController extends Controller
 
     public function getAllUsers(Request $request) {
         try {
-            if (!$this->permissions->canManageAdmins(auth()->user()) && !$this->permissions->canViewAdminDetails(auth()->user())) {
+            $actor = auth()->user();
+
+            if (!$this->permissions->canManageAdmins($actor) && !$this->permissions->canViewAdminDetails($actor)) {
                 return response()->json(['message' => 'Access denied: Only Super Admin can manage admins.'], 403);
+            }
+
+            $baseQuery = User::with('branch');
+
+            // Branch admin should only see admin accounts within their own branch.
+            // Prevent bypass via omitting branch_id query param.
+            if ($actor && $actor->role === 'branch_admin' && $actor->branch_id !== null) {
+                $baseQuery->where('branch_id', $actor->branch_id)
+                    ->whereIn('role', ['admin', 'branch_admin']);
             }
 
             $users = $this->lists->build(
                 $request,
-                User::with('branch'),
+                $baseQuery,
                 [
                     // status=super_admin|branch_admin|admin
                     'status_field' => 'role',
@@ -115,6 +127,8 @@ class UserController extends Controller
 
     public function editAdmin(Request $request, $id) {
         try {
+            $actor = auth()->user();
+
             $validatedData = $request->validate([
                 'username' => 'sometimes|required|string|max:255',
                 'email' => 'sometimes|required|string|email|max:255|unique:users,email,' . $id,
@@ -132,8 +146,26 @@ class UserController extends Controller
 
             $user = User::findOrFail($id);
 
-            if (! $this->permissions->canEditUser(auth()->user(), $user)) {
+            if (! $this->permissions->canEditUser($actor, $user)) {
                 return response()->json(['message' => 'Access denied'], 403);
+            }
+
+            // Prevent branch_admin from escalating roles or moving users across branches.
+            if ($actor && $actor->role === 'branch_admin') {
+                if (array_key_exists('branch_id', $validatedData) && (int) $validatedData['branch_id'] !== (int) $actor->branch_id) {
+                    return response()->json(['message' => 'Access denied'], 403);
+                }
+
+                if (array_key_exists('role', $validatedData) && $validatedData['role'] !== 'admin') {
+                    return response()->json(['message' => 'Access denied'], 403);
+                }
+
+                // Always force the branch to actor's branch when branch_admin edits.
+                $validatedData['branch_id'] = $actor->branch_id;
+                // Ensure branch_admin cannot set role to branch_admin/super_admin.
+                if (array_key_exists('role', $validatedData)) {
+                    $validatedData['role'] = 'admin';
+                }
             }
 
             if (isset($validatedData['password'])) {
@@ -143,6 +175,8 @@ class UserController extends Controller
             $user->update($validatedData);
 
             return response()->json(['message' => 'Admin user updated successfully', 'user' => $user], 200);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Error updating admin user: ' . $e->getMessage());
             return response()->json(['message' => 'Failed to update admin user', 'error' => $e->getMessage()], 500);
@@ -201,7 +235,7 @@ class UserController extends Controller
             // Log the incoming request data for debugging
             Log::info('Incoming request data:', $request->all());
 
-            $validatedData = $request->validate([
+            $rules = [
                 'username' => 'required|string|max:255',
                 'email' => 'required|string|email|max:255|unique:users',
                 'employee_id' => 'nullable|string|max:50|unique:users',
@@ -214,7 +248,19 @@ class UserController extends Controller
                 'role' => 'required|in:super_admin,branch_admin,admin',
                 'branch_id' => 'required|exists:branches,id',
                 'is_active' => 'sometimes|boolean',
-            ]);
+            ];
+
+            // Branch admin can only create role=admin in their own branch.
+            if ($actor && $actor->role === 'branch_admin') {
+                $rules['role'] = 'required|in:admin';
+            }
+
+            $validatedData = $request->validate($rules);
+
+            if ($actor && $actor->role === 'branch_admin') {
+                $validatedData['branch_id'] = $actor->branch_id;
+                $validatedData['role'] = 'admin';
+            }
 
             $user = User::create([
                 'username' => $validatedData['username'],
@@ -231,6 +277,8 @@ class UserController extends Controller
                 'is_active' => $validatedData['is_active'] ?? true,
             ]);
             return response()->json(['message' => 'Admin user created successfully', 'user' => $user], 201);
+        } catch (ValidationException $e) {
+            throw $e;
         } catch (\Exception $e) {
             Log::error('Error creating admin user: ' . $e->getMessage());
             return response()->json(['message' => 'Failed to create admin user', 'error' => $e->getMessage()], 500);

@@ -2,11 +2,13 @@
 
 use App\Http\Controllers\BorrowAnalyticsController;
 use App\Http\Controllers\BorrowController;
+use App\Http\Controllers\BorrowReminderController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\SemesterController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Middleware\CheckBranchIp;
+use App\Http\Middleware\CheckCanManageAdmins;
 use App\Http\Middleware\CheckPublicIP;
 use App\Http\Middleware\CheckSuperAdmin;
 use App\Http\Middleware\EnsureUserIsActive;
@@ -16,6 +18,9 @@ use Illuminate\Support\Facades\Route;
 Route::middleware(CheckPublicIP::class)->group(function () {
     Route::post('/users/login', [\App\Http\Controllers\UserController::class, 'login']);
 });
+
+// Demo helper (no auth middleware here; controller enforces token/role checks)
+Route::get('/simulate/overdue-borrows', [\App\Http\Controllers\DemoSimulationController::class, 'overdueBorrows']);
 
 // Authenticated routes (all require auth, public IP check, branch IP, and active admin account)
 Route::middleware(['auth:sanctum', EnsureUserIsActive::class, CheckBranchIp::class])->group(function () {
@@ -50,6 +55,7 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, CheckBranchIp::cla
     ///Borrow Books
     Route::post('/borrow', [BorrowController::class, 'borrowBook']);
     Route::get('/borrows', [BorrowController::class, 'index']);
+    Route::get('/borrows/reminders/emailed', [BorrowReminderController::class, 'emailedStudents']);
     Route::put('/borrow/{id}', [BorrowController::class, 'processReturnOrStatus']);
     Route::post('/borrow/extend', [BorrowController::class, 'extendBorrowing']);
     Route::put('archive/borrow/{id}', [BorrowController::class, 'archive']);
@@ -112,12 +118,15 @@ Route::middleware(['auth:sanctum', EnsureUserIsActive::class, CheckBranchIp::cla
     Route::post('/users/edit-me', [\App\Http\Controllers\UserController::class, 'editLoggedInUser']);
     Route::get('/users/list-admins', [\App\Http\Controllers\UserController::class, 'getAllUsers']);
 
-    // Admin and Branch creation (requires CheckSuperAdmin middleware)
-    Route::middleware(CheckSuperAdmin::class)->group(function () {
+    // Admin management (super_admin + branch_admin; branch_admin is scoped in controller)
+    Route::middleware(CheckCanManageAdmins::class)->group(function () {
         Route::post('/users/create-admin', [\App\Http\Controllers\UserController::class, 'createAdmin']);
         Route::post('/users/edit-admin/{id}', [\App\Http\Controllers\UserController::class, 'editAdmin']);
         Route::get('/users/view-admin/{id}', [\App\Http\Controllers\UserController::class, 'getUserById']);
+    });
 
+    // Admin and Branch creation (requires CheckSuperAdmin middleware)
+    Route::middleware(CheckSuperAdmin::class)->group(function () {
         // Branches
         Route::post('/branches/create', [\App\Http\Controllers\BranchController::class, 'createBranch']);
         Route::post('/branches/edit/{id}', [\App\Http\Controllers\BranchController::class, 'editBranch']);

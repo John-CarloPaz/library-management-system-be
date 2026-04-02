@@ -13,16 +13,33 @@ class BookController extends Controller
     public function __construct(private ListQueryService $lists)
     {
     }
+
+    private function denyIfCannotManageBook(Book $book)
+    {
+        $user = Auth::user();
+
+        if (! $user || ! in_array($user->role, ['super_admin', 'branch_admin'], true)) {
+            return response()->json(['message' => 'Access denied.'], 403);
+        }
+
+        if ($user->role === 'branch_admin' && $user->branch_id !== null && (int) $book->branch_id !== (int) $user->branch_id) {
+            return response()->json(['message' => 'Access denied.'], 403);
+        }
+
+        return null;
+    }
+
     public function editBookStatus(Request $request, $id)
     {
         $validated = $this->validateBookStatus($request);
 
         $book = Book::findOrFail($id);
-        $user = Auth::user();
 
-        if ($user->role === 'admin') {
-            return response()->json(['message' => 'Access denied.'], 403);
+        if ($denied = $this->denyIfCannotManageBook($book)) {
+            return $denied;
         }
+
+        $user = Auth::user();
 
         // Map validated request status to the actual DB column
         $book->update([
@@ -49,11 +66,12 @@ class BookController extends Controller
     public function archiveBook(Request $request, $id)
     {
         $book = Book::findOrFail($id);
-        $user = Auth::user();
 
-        if ($user->role === 'admin') {
-            return response()->json(['message' => 'Access denied.'], 403);
+        if ($denied = $this->denyIfCannotManageBook($book)) {
+            return $denied;
         }
+
+        $user = Auth::user();
 
         // Business rule: book cannot be archived when status is active or under_repair
         if (in_array($book->book_status, ['active', 'under_repair'], true)) {
@@ -86,6 +104,11 @@ class BookController extends Controller
     {
         $book = Book::with('catalogue', 'branch')->findOrFail($id);
 
+        $user = Auth::user();
+        if ($user && $user->role === 'branch_admin' && $user->branch_id !== null && (int) $book->branch_id !== (int) $user->branch_id) {
+            return response()->json(['message' => 'Access denied.'], 403);
+        }
+
         return response()->json([
             'book' => $book,
         ]);
@@ -93,9 +116,16 @@ class BookController extends Controller
 
     public function listBooks(Request $request)
     {
+        $user = Auth::user();
+
+        $baseQuery = Book::with('catalogue', 'branch');
+        if ($user && $user->role === 'branch_admin' && $user->branch_id !== null) {
+            $baseQuery->where('branch_id', $user->branch_id);
+        }
+
         $books = $this->lists->build(
             $request,
-            Book::with('catalogue', 'branch'),
+            $baseQuery,
             [
                 'status_field' => 'book_status',
                 'archived_field' => 'is_archived',
@@ -114,6 +144,11 @@ class BookController extends Controller
     {
         $book = Book::with('catalogue', 'branch')->where('reference_number', $referenceId)->firstOrFail();
 
+        $user = Auth::user();
+        if ($user && $user->role === 'branch_admin' && $user->branch_id !== null && (int) $book->branch_id !== (int) $user->branch_id) {
+            return response()->json(['message' => 'Access denied.'], 403);
+        }
+
         return response()->json([
             'book' => $book,
         ]);
@@ -122,11 +157,12 @@ class BookController extends Controller
     public function restoreBook(Request $request, $id)
     {
         $book = Book::findOrFail($id);
-        $user = Auth::user();
 
-        if ($user->role === 'admin') {
-            return response()->json(['message' => 'Access denied.'], 403);
+        if ($denied = $this->denyIfCannotManageBook($book)) {
+            return $denied;
         }
+
+        $user = Auth::user();
 
         $book->update([
             'is_archived' => false,

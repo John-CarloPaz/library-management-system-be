@@ -26,6 +26,19 @@ class BorrowController extends Controller
             'duration' => 'required|in:3,7,14,30',
         ]);
 
+        $hasUnpaidPenalty = Borrow::query()
+            ->where('student_id', $validated['student_id'])
+            ->where('is_archived', false)
+            ->where('is_penalized', true)
+            ->where('is_fine_paid', false)
+            ->exists();
+
+        if ($hasUnpaidPenalty) {
+            return response()->json([
+                'message' => 'Cannot borrow: student has an unpaid penalty/fine.',
+            ], 400);
+        }
+
         $book = Book::where('reference_number', $validated['reference_number'])->first();
 
         if (!$book) {

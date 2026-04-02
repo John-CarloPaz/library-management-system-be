@@ -19,10 +19,8 @@ class DatabaseSeeder extends Seeder
             SemesterSeeder::class,
             BranchSeeder::class,
             AdminSeeder::class,
+            ProcurementSeeder::class,
             DepartmentSeeder::class,
-            StudentSeeder::class,
-            CatalogueSeeder::class,
-            AcquisitionSeeder::class,
         ]);
     }
 }
